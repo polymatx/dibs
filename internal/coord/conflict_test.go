@@ -19,17 +19,17 @@ func TestNormalize(t *testing.T) {
 		in, want string
 		wantErr  bool
 	}{
-		{in: "src/auth", want: "src/auth/**"},                 // existing dir → subtree
-		{in: "./src/auth/", want: "src/auth/**"},              // trailing slash → subtree
-		{in: "src/auth/token.go", want: "src/auth/token.go"},  // existing file stays literal
-		{in: "migrations", want: "migrations/**"},             // nonexistent → conservative subtree
-		{in: "docs/PLAN.md", want: "docs/PLAN.md/**"},         // nonexistent file-looking path too
+		{in: "src/auth", want: "src/auth/**"},                // existing dir → subtree
+		{in: "./src/auth/", want: "src/auth/**"},             // trailing slash → subtree
+		{in: "src/auth/token.go", want: "src/auth/token.go"}, // existing file stays literal
+		{in: "migrations", want: "migrations/**"},            // nonexistent → conservative subtree
+		{in: "docs/PLAN.md", want: "docs/PLAN.md/**"},        // nonexistent file-looking path too
 		{in: "**/*.sql", want: "**/*.sql"},
-		{in: ".", want: "**"},                                 // whole repo
-		{in: "src/../src/auth", want: "src/auth/**"},          // cleaned
+		{in: ".", want: "**"},                                                     // whole repo
+		{in: "src/../src/auth", want: "src/auth/**"},                              // cleaned
 		{in: filepath.Join(repo, "src/auth/token.go"), want: "src/auth/token.go"}, // absolute inside repo
-		{in: "/somewhere/else/entirely", wantErr: true},       // absolute outside repo
-		{in: "../outside", wantErr: true},                     // escapes repo
+		{in: "/somewhere/else/entirely", wantErr: true},                           // absolute outside repo
+		{in: "../outside", wantErr: true},                                         // escapes repo
 		{in: "", wantErr: true},
 		{in: "src/[", wantErr: true}, // invalid glob
 	}
@@ -120,13 +120,13 @@ func TestPathCoveredBy(t *testing.T) {
 	}{
 		{"src/auth/token.go", "src/auth/**", true},
 		{"src/api/routes.go", "src/auth/**", false},
-		{"docs/[draft].md", "docs/d.md", false},   // brackets in a FILE NAME are literal
-		{"docs/[draft].md", "docs/**", true},      // but globs still cover it
-		{"docs/[x.md", "**", true},                // unclosed bracket: still just a file name
+		{"docs/[draft].md", "docs/d.md", false}, // brackets in a FILE NAME are literal
+		{"docs/[draft].md", "docs/**", true},    // but globs still cover it
+		{"docs/[x.md", "**", true},              // unclosed bracket: still just a file name
 		{"docs/d.md", "docs/d.md", true},
-		{"src", "src/auth/**", true},              // touching a dir touches its claimed subtree
-		{"README.md", "src/**/*.md", false},       // glob prefix not an ancestor
-		{"src/main.go", "src/**/*.md", false},     // same prefix but glob cannot match the file
+		{"src", "src/auth/**", true},          // touching a dir touches its claimed subtree
+		{"README.md", "src/**/*.md", false},   // glob prefix not an ancestor
+		{"src/main.go", "src/**/*.md", false}, // same prefix but glob cannot match the file
 	}
 	for _, c := range cases {
 		if got := PathCoveredBy(c.path, c.pattern); got != c.want {
