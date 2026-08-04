@@ -91,7 +91,11 @@ func parseMixed(fs *flag.FlagSet, args []string) ([]string, error) {
 	var flags, pos []string
 	for i := 0; i < len(args); i++ {
 		a := args[i]
-		if !strings.HasPrefix(a, "-") || a == "-" || a == "--" {
+		if a == "--" { // end of flags: everything after is positional
+			pos = append(pos, args[i+1:]...)
+			break
+		}
+		if !strings.HasPrefix(a, "-") || a == "-" {
 			pos = append(pos, a)
 			continue
 		}

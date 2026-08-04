@@ -84,27 +84,28 @@ func TestWithLockMutualExclusion(t *testing.T) {
 	}
 }
 
-func TestWithLockStealsStale(t *testing.T) {
+// A lock file left on disk by a crashed process holds no kernel lock, so
+// it must not block anyone. This is the property that lets dibs skip
+// stale-lock detection entirely.
+func TestWithLockIgnoresLeftoverLockFile(t *testing.T) {
 	s := At(t.TempDir(), t.TempDir())
 	if err := os.MkdirAll(s.State, 0o755); err != nil {
 		t.Fatal(err)
 	}
 	lock := filepath.Join(s.State, "lock")
-	if err := os.WriteFile(lock, []byte("dead"), 0o644); err != nil {
+	if err := os.WriteFile(lock, []byte("crashed writer left me behind"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	old := time.Now().Add(-time.Minute)
-	os.Chtimes(lock, old, old)
 
 	done := make(chan error, 1)
 	go func() { done <- s.WithLock(func() error { return nil }) }()
 	select {
 	case err := <-done:
 		if err != nil {
-			t.Fatalf("stale lock should be stolen: %v", err)
+			t.Fatalf("leftover lock file must not block: %v", err)
 		}
 	case <-time.After(3 * time.Second):
-		t.Fatal("WithLock hung on a stale lock")
+		t.Fatal("WithLock hung on a leftover lock file")
 	}
 }
 

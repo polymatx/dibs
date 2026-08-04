@@ -48,7 +48,7 @@ func cmdNotes(args []string) error {
 	if err != nil {
 		return err
 	}
-	if err := m.MarkNotesRead(); err != nil {
+	if err := m.MarkNotesRead(all); err != nil {
 		return err
 	}
 	if *jsonOut {

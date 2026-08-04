@@ -183,37 +183,40 @@ func ListJSON[T any](dir string) ([]T, error) {
 	return out, nil
 }
 
-// WithLock runs fn while holding the store's advisory lock. The lock is a
-// lockfile created with O_EXCL; a lock older than staleAfter is presumed
-// abandoned (crashed process) and is stolen. Critical sections in dibs are
-// a few milliseconds, so contention is short-lived.
+// WithLock runs fn while holding an exclusive lock on the store. The lock
+// is a kernel file lock (flock on Unix, LockFileEx on Windows), so it is
+// released automatically when the holding process exits or crashes — there
+// are no stale lockfiles to detect and no stealing heuristics to get
+// wrong. Critical sections in dibs are a few milliseconds, so contention
+// is short-lived.
 func (s *Store) WithLock(fn func() error) error {
 	const (
-		staleAfter = 10 * time.Second
-		timeout    = 5 * time.Second
-		poll       = 25 * time.Millisecond
+		timeout = 5 * time.Second
+		poll    = 25 * time.Millisecond
 	)
 	if err := os.MkdirAll(s.State, 0o755); err != nil {
 		return err
 	}
-	lock := filepath.Join(s.State, "lock")
+	path := filepath.Join(s.State, "lock")
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o644)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
 	deadline := time.Now().Add(timeout)
 	for {
-		f, err := os.OpenFile(lock, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o644)
-		if err == nil {
-			fmt.Fprintf(f, "%d %s\n", os.Getpid(), time.Now().Format(time.RFC3339))
-			f.Close()
+		ok, err := tryLock(f)
+		if err != nil {
+			return fmt.Errorf("locking %s: %w", path, err)
+		}
+		if ok {
 			break
 		}
-		if st, serr := os.Stat(lock); serr == nil && time.Since(st.ModTime()) > staleAfter {
-			os.Remove(lock) // stale: owner is gone
-			continue
-		}
 		if time.Now().After(deadline) {
-			return fmt.Errorf("timed out waiting for dibs lock at %s (remove it if no agent is running)", lock)
+			return fmt.Errorf("timed out waiting for the dibs lock at %s", path)
 		}
 		time.Sleep(poll)
 	}
-	defer os.Remove(lock)
+	defer unlock(f)
 	return fn()
 }

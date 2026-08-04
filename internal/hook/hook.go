@@ -104,7 +104,7 @@ func RunPreCommit(m *coord.Manager, stderr io.Writer) int {
 		}
 	}
 	fmt.Fprintln(stderr, "Wait for the lease, coordinate via `dibs note`, or release/renegotiate. (`git commit --no-verify` overrides.)")
-	return 1
+	return 2 // exit-code contract: 2 = held by another agent (any nonzero blocks the commit)
 }
 
 func reasonSuffix(reason string) string {
@@ -142,13 +142,25 @@ func InstallClaude(settingsPath string) (changed bool, err error) {
 		if json.Unmarshal(raw, &settings) != nil {
 			return false, fmt.Errorf("%s exists but is not valid JSON — fix it first, dibs will not overwrite it", settingsPath)
 		}
+		if settings == nil { // the file contains JSON null
+			settings = map[string]any{}
+		}
 	}
 
-	hooks, _ := settings["hooks"].(map[string]any)
-	if hooks == nil {
-		hooks = map[string]any{}
+	hooks := map[string]any{}
+	if v, ok := settings["hooks"]; ok && v != nil {
+		hooks, ok = v.(map[string]any)
+		if !ok {
+			return false, fmt.Errorf("%s has an unexpected \"hooks\" shape — dibs will not modify it; add the PreToolUse entry for %q yourself", settingsPath, claudeHookCommand)
+		}
 	}
-	pre, _ := hooks["PreToolUse"].([]any)
+	var pre []any
+	if v, ok := hooks["PreToolUse"]; ok && v != nil {
+		pre, ok = v.([]any)
+		if !ok {
+			return false, fmt.Errorf("%s has an unexpected \"hooks.PreToolUse\" shape — dibs will not modify it; add the entry for %q yourself", settingsPath, claudeHookCommand)
+		}
+	}
 	for _, entry := range pre {
 		b, _ := json.Marshal(entry)
 		if strings.Contains(string(b), claudeHookCommand) {
@@ -171,8 +183,9 @@ func InstallClaude(settingsPath string) (changed bool, err error) {
 	return true, store.WriteAtomic(settingsPath, append(b, '\n'))
 }
 
-// UninstallClaude removes the dibs hook entry, leaving everything else as
-// it was.
+// UninstallClaude removes the dibs hook command, leaving everything else
+// as it was — including user hooks that share a PreToolUse entry with the
+// dibs one.
 func UninstallClaude(settingsPath string) (changed bool, err error) {
 	raw, err := os.ReadFile(settingsPath)
 	if err != nil {
@@ -189,12 +202,34 @@ func UninstallClaude(settingsPath string) (changed bool, err error) {
 	pre, _ := hooks["PreToolUse"].([]any)
 	var kept []any
 	for _, entry := range pre {
-		b, _ := json.Marshal(entry)
-		if strings.Contains(string(b), claudeHookCommand) {
-			changed = true
+		em, ok := entry.(map[string]any)
+		if !ok {
+			kept = append(kept, entry)
 			continue
 		}
-		kept = append(kept, entry)
+		cmds, ok := em["hooks"].([]any)
+		if !ok {
+			kept = append(kept, entry)
+			continue
+		}
+		// Remove only the dibs command; keep any user commands that were
+		// grouped into the same entry.
+		var keptCmds []any
+		for _, c := range cmds {
+			cm, ok := c.(map[string]any)
+			if ok {
+				if cmd, _ := cm["command"].(string); strings.Contains(cmd, claudeHookCommand) {
+					changed = true
+					continue
+				}
+			}
+			keptCmds = append(keptCmds, c)
+		}
+		if len(keptCmds) == 0 {
+			continue // the entry was purely ours
+		}
+		em["hooks"] = keptCmds
+		kept = append(kept, em)
 	}
 	if !changed {
 		return false, nil

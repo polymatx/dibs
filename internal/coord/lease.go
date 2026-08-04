@@ -77,7 +77,7 @@ func (m *Manager) Claim(patterns []string, reason string, ttl time.Duration) (*L
 			return err
 		}
 		for _, lease := range active {
-			if lease.Agent == m.Agent {
+			if m.isSelf(lease) {
 				continue
 			}
 			for _, want := range norm {
@@ -105,8 +105,15 @@ func (m *Manager) Claim(patterns []string, reason string, ttl time.Duration) (*L
 				return store.WriteJSON(filepath.Join(m.leaseDir(), lease.ID+".json"), lease)
 			}
 		}
+		id := newID()
+		for i := 0; i < 32; i++ { // an ID collision must never overwrite a live lease
+			if _, err := os.Stat(filepath.Join(m.leaseDir(), id+".json")); os.IsNotExist(err) {
+				break
+			}
+			id = newID()
+		}
 		granted = &Lease{
-			ID:        newID(),
+			ID:        id,
 			Agent:     m.Agent,
 			Patterns:  norm,
 			Reason:    reason,
@@ -200,8 +207,10 @@ func (m *Manager) Renew(ttl time.Duration) ([]Lease, error) {
 	return renewed, nil
 }
 
-// Check reports which of the given repo-relative paths are covered by
-// another agent's active lease. It never mutates state, so it is safe and
+// Check reports which of the given paths (repo-relative or absolute) are
+// covered by another agent's active lease. Paths are matched literally —
+// never parsed as globs — so file names containing glob metacharacters
+// are handled correctly. Check never mutates state, so it is safe and
 // fast to call from hooks on every file edit.
 func (m *Manager) Check(paths []string) ([]Conflict, error) {
 	active, err := m.ActiveLeases()
@@ -210,16 +219,16 @@ func (m *Manager) Check(paths []string) ([]Conflict, error) {
 	}
 	var conflicts []Conflict
 	for _, raw := range paths {
-		p, err := Normalize(raw, m.St.Repo)
+		p, err := NormalizePath(raw, m.St.Repo)
 		if err != nil {
-			continue
+			continue // outside the repo — not ours to police
 		}
 		for _, lease := range active {
-			if lease.Agent == m.Agent {
+			if m.isSelf(lease) {
 				continue
 			}
 			for _, held := range lease.Patterns {
-				if Intersect(p, held) {
+				if PathCoveredBy(p, held) {
 					conflicts = append(conflicts, Conflict{Pattern: p, Holder: lease})
 				}
 			}

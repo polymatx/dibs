@@ -112,10 +112,12 @@ repo/.dibs/         knowledge — lessons/*.md
   name derived from the worktree path — so each worktree has a consistent
   identity with zero configuration.
 - **Patterns** are [doublestar](https://github.com/bmatcuk/doublestar)
-  globs relative to the repository root. Claiming a directory claims its
-  subtree. Glob-to-glob conflict detection is conservative: two globs whose
-  static prefixes are nested are treated as conflicting. Precise claims
-  produce precise conflicts.
+  globs relative to the repository root (absolute paths are resolved into
+  it). Claiming a directory claims its subtree, and a path that does not
+  exist yet is treated the same way. Only existing regular files are
+  claimed literally. Glob-to-glob conflict detection is conservative: two
+  globs whose static prefixes are nested are treated as conflicting.
+  Precise claims produce precise conflicts.
 - Every claim, denial, release, expiry, and note is appended to a JSONL
   journal (`dibs log`).
 

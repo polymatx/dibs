@@ -20,6 +20,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"gopkg.in/yaml.v3"
 )
@@ -52,18 +53,6 @@ func Add(dir string, l Lesson) (string, error) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return "", err
 	}
-	slug := Slugify(l.Title)
-	path := filepath.Join(dir, slug+".md")
-	for i := 2; ; i++ {
-		if _, err := os.Stat(path); os.IsNotExist(err) {
-			break
-		}
-		if i > 99 {
-			return "", fmt.Errorf("too many lessons titled %q", l.Title)
-		}
-		path = filepath.Join(dir, fmt.Sprintf("%s-%d.md", slug, i))
-	}
-
 	fm, err := yaml.Marshal(l)
 	if err != nil {
 		return "", err
@@ -74,10 +63,33 @@ func Add(dir string, l Lesson) (string, error) {
 	buf.WriteString("---\n\n")
 	buf.WriteString(strings.TrimSpace(l.Body))
 	buf.WriteString("\n")
-	if err := os.WriteFile(path, buf.Bytes(), 0o644); err != nil {
-		return "", err
+
+	// O_EXCL makes slug collision handling race-free without a lock: two
+	// agents adding same-titled lessons concurrently get distinct files.
+	slug := Slugify(l.Title)
+	for i := 1; i <= 99; i++ {
+		name := slug
+		if i > 1 {
+			name = fmt.Sprintf("%s-%d", slug, i)
+		}
+		f, err := os.OpenFile(filepath.Join(dir, name+".md"), os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o644)
+		if os.IsExist(err) {
+			continue
+		}
+		if err != nil {
+			return "", err
+		}
+		_, werr := f.Write(buf.Bytes())
+		cerr := f.Close()
+		if werr != nil {
+			return "", werr
+		}
+		if cerr != nil {
+			return "", cerr
+		}
+		return name, nil
 	}
-	return strings.TrimSuffix(filepath.Base(path), ".md"), nil
+	return "", fmt.Errorf("too many lessons titled %q", l.Title)
 }
 
 // List reads every lesson in dir, newest first.
@@ -220,7 +232,8 @@ func Slugify(title string) string {
 	return s
 }
 
-// snippet returns the first body line containing a query term.
+// snippet returns the first body line containing a query term, truncated
+// on a rune boundary so multi-byte text stays valid UTF-8.
 func snippet(body string, terms []string) string {
 	for _, line := range strings.Split(body, "\n") {
 		low := strings.ToLower(line)
@@ -228,7 +241,11 @@ func snippet(body string, terms []string) string {
 			if strings.Contains(low, t) {
 				line = strings.TrimSpace(line)
 				if len(line) > 160 {
-					line = line[:157] + "..."
+					cut := 157
+					for cut > 0 && !utf8.RuneStart(line[cut]) {
+						cut--
+					}
+					line = line[:cut] + "..."
 				}
 				return line
 			}
@@ -243,7 +260,8 @@ func parseFile(path string) (Lesson, error) {
 		return Lesson{}, err
 	}
 	l := Lesson{Slug: strings.TrimSuffix(filepath.Base(path), ".md")}
-	body := string(raw)
+	// Normalize CRLF so frontmatter survives Windows checkouts and editors.
+	body := strings.ReplaceAll(string(raw), "\r\n", "\n")
 	if strings.HasPrefix(body, "---\n") {
 		if end := strings.Index(body[4:], "\n---"); end >= 0 {
 			fm := body[4 : 4+end]

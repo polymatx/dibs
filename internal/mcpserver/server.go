@@ -184,7 +184,7 @@ func New(m *coord.Manager) *mcp.Server {
 		if err != nil {
 			return nil, nil, err
 		}
-		if err := m.MarkNotesRead(); err != nil {
+		if err := m.MarkNotesRead(all); err != nil {
 			return nil, nil, err
 		}
 		var b strings.Builder

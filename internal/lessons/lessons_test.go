@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"unicode/utf8"
 )
 
 func TestAddGetRoundtrip(t *testing.T) {
@@ -80,6 +81,36 @@ func TestSearchRanksRelevance(t *testing.T) {
 	none, _ := Search(dir, "zzz qqq xyzzy", 5)
 	if len(none) != 0 {
 		t.Fatalf("nonsense query matched: %+v", none)
+	}
+}
+
+// Review regression: CRLF files (Windows checkouts, CRLF editors) must
+// keep their frontmatter.
+func TestParseFileCRLF(t *testing.T) {
+	dir := t.TempDir()
+	content := "---\r\ntitle: crlf lesson\r\ntags: [win]\r\ncreated: 2026-08-04T00:00:00Z\r\n---\r\n\r\nbody line\r\n"
+	os.WriteFile(filepath.Join(dir, "crlf-lesson.md"), []byte(content), 0o644)
+	l, err := Get(dir, "crlf-lesson")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if l.Title != "crlf lesson" || len(l.Tags) != 1 || l.Body != "body line" {
+		t.Fatalf("CRLF frontmatter lost: %+v", l)
+	}
+}
+
+// Review regression: snippet truncation must never split a multi-byte
+// rune and emit invalid UTF-8.
+func TestSnippetUTF8Safe(t *testing.T) {
+	dir := t.TempDir()
+	body := "prefix match-me " + strings.Repeat("é", 200)
+	Add(dir, Lesson{Title: "unicode heavy", Body: body})
+	hits, err := Search(dir, "match-me", 1)
+	if err != nil || len(hits) != 1 {
+		t.Fatalf("search: %v %v", hits, err)
+	}
+	if !utf8.ValidString(hits[0].Snippet) {
+		t.Fatalf("snippet is invalid UTF-8: %q", hits[0].Snippet)
 	}
 }
 

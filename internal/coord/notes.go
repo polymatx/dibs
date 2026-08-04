@@ -24,13 +24,16 @@ const noteExpiry = 7 * 24 * time.Hour
 
 func (m *Manager) noteDir() string { return filepath.Join(m.St.State, "notes") }
 
-// PostNote broadcasts a message to every agent on this repository.
+// PostNote broadcasts a message to every agent on this repository. The
+// timestamp is assigned inside the lock, so a note can never be created
+// in another agent's past (which would let a read cursor skip it).
 func (m *Manager) PostNote(msg string) (*Note, error) {
 	if msg == "" {
 		return nil, fmt.Errorf("note message is empty")
 	}
-	n := Note{ID: newID(), From: m.Agent, Message: msg, CreatedAt: m.Now()}
+	var n Note
 	err := m.St.WithLock(func() error {
+		n = Note{ID: newID(), From: m.Agent, Message: msg, CreatedAt: m.Now()}
 		m.pruneNotesLocked()
 		name := fmt.Sprintf("%020d-%s.json", n.CreatedAt.UnixNano(), n.ID)
 		m.journal("note", map[string]any{"from": n.From, "message": msg})
@@ -78,14 +81,27 @@ func (m *Manager) UnreadNotes() ([]Note, error) {
 	return unread, nil
 }
 
-// MarkNotesRead advances this agent's read cursor to now.
-func (m *Manager) MarkNotesRead() error {
+// MarkNotesRead advances this agent's read cursor to the newest note it
+// actually saw — never to "now", which would silently swallow any note
+// that lands between reading and acknowledging.
+func (m *Manager) MarkNotesRead(seen []Note) error {
+	var newest time.Time
+	for _, n := range seen {
+		if n.CreatedAt.After(newest) {
+			newest = n.CreatedAt
+		}
+	}
+	if newest.IsZero() {
+		return nil
+	}
 	return m.St.WithLock(func() error {
 		var info AgentInfo
 		if err := store.ReadJSON(m.agentPath(), &info); err != nil {
 			info = AgentInfo{Name: m.Agent, FirstSeen: m.Now()}
 		}
-		info.LastNoteRead = m.Now()
+		if newest.After(info.LastNoteRead) {
+			info.LastNoteRead = newest
+		}
 		info.LastSeen = m.Now()
 		return store.WriteJSON(m.agentPath(), info)
 	})

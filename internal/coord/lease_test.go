@@ -3,6 +3,7 @@ package coord
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -141,6 +142,61 @@ func TestCheck(t *testing.T) {
 	}
 }
 
+// TestCheckAbsolutePaths is the review regression: agents pass absolute
+// paths constantly, and an absolute path to a held file must not report
+// FREE.
+func TestCheckAbsolutePaths(t *testing.T) {
+	alice, bob, _ := pair(t)
+	if _, conflicts, err := alice.Claim([]string{"src/auth"}, "refactor", 0); err != nil || len(conflicts) > 0 {
+		t.Fatalf("setup: %v %v", conflicts, err)
+	}
+	abs := filepath.Join(bob.St.Repo, "src", "auth", "token.go")
+	got, err := bob.Check([]string{abs})
+	if err != nil || len(got) != 1 {
+		t.Fatalf("absolute path to a held file must conflict: %v %v", got, err)
+	}
+	// And an absolute path outside the repo is not ours to police.
+	got, err = bob.Check([]string{"/somewhere/else/entirely.go"})
+	if err != nil || len(got) != 0 {
+		t.Fatalf("outside-repo path must be ignored: %v %v", got, err)
+	}
+}
+
+// TestClaimAbsolutePattern: an absolute path inside the repo claims the
+// repo-relative form; outside the repo it errors instead of granting a
+// junk lease that protects nothing.
+func TestClaimAbsolutePattern(t *testing.T) {
+	alice, bob, _ := pair(t)
+	abs := filepath.Join(alice.St.Repo, "src", "auth")
+	lease, conflicts, err := alice.Claim([]string{abs}, "refactor", 0)
+	if err != nil || len(conflicts) > 0 || lease.Patterns[0] != "src/auth/**" {
+		t.Fatalf("absolute claim mishandled: %+v %v %v", lease, conflicts, err)
+	}
+	if _, _, err := bob.Claim([]string{"/absolutely/not/in/repo"}, "junk", 0); err == nil {
+		t.Fatal("claiming a path outside the repo must error")
+	}
+}
+
+// TestJournalTruncatesOversizedDetails: user content in journal details is
+// capped so a single huge note can never make the journal unreadable
+// (which would silently hide the newest events and corrupt rotation).
+func TestJournalTruncatesOversizedDetails(t *testing.T) {
+	alice, _, _ := pair(t)
+	huge := strings.Repeat("x", 5000)
+	if _, err := alice.PostNote(huge); err != nil {
+		t.Fatal(err)
+	}
+	events, err := alice.Journal(0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	last := events[len(events)-1]
+	msg, _ := last.Details["message"].(string)
+	if len(msg) > 1100 || !strings.HasSuffix(msg, "…") {
+		t.Fatalf("journal detail not truncated: len=%d", len(msg))
+	}
+}
+
 // TestConcurrentClaims hammers the same pattern from two agents in
 // parallel; the lock must ensure at most one holds it at any time.
 func TestConcurrentClaims(t *testing.T) {
@@ -189,7 +245,7 @@ func TestConcurrentClaims(t *testing.T) {
 }
 
 func TestNotesFlow(t *testing.T) {
-	alice, bob, _ := pair(t)
+	alice, bob, ck := pair(t)
 
 	if _, err := alice.PostNote("heads up"); err != nil {
 		t.Fatal(err)
@@ -202,11 +258,24 @@ func TestNotesFlow(t *testing.T) {
 	if u, _ := alice.UnreadNotes(); len(u) != 0 {
 		t.Fatalf("alice sees own note as unread: %v", u)
 	}
-	if err := bob.MarkNotesRead(); err != nil {
+	all, _ := bob.Notes()
+	if err := bob.MarkNotesRead(all); err != nil {
 		t.Fatal(err)
 	}
 	if u, _ := bob.UnreadNotes(); len(u) != 0 {
 		t.Fatalf("after MarkNotesRead unread should be empty, got %v", u)
+	}
+	// Acknowledging nothing must not advance the cursor: a note that
+	// lands after a read is still unread.
+	if err := bob.MarkNotesRead(nil); err != nil {
+		t.Fatal(err)
+	}
+	ck.advance(time.Second)
+	if _, err := alice.PostNote("second"); err != nil {
+		t.Fatal(err)
+	}
+	if u, _ := bob.UnreadNotes(); len(u) != 1 {
+		t.Fatalf("note posted after read must be unread, got %v", u)
 	}
 }
 
