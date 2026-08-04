@@ -305,7 +305,7 @@ no new dependencies without a very good reason. See
 
 ## License
 
-[MIT](LICENSE) — © 2026 [Farid Vosoughi (polymatx)](https://github.com/polymatx)
+[MIT](LICENSE) — © 2026 [polymatx](https://github.com/polymatx)
 
 ---
 
