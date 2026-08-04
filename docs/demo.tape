@@ -9,7 +9,7 @@ Set Height 620
 Set Theme "Catppuccin Mocha"
 Set TypingSpeed 40ms
 
-Type "# two agents, one repo — watch them NOT collide" Enter Sleep 1s
+Type "# two agents, one repo - watch them NOT collide" Enter Sleep 1s
 
 Type `dibs claim src/auth --reason "refactor auth" --agent alice` Enter Sleep 1.5s
 
@@ -17,9 +17,9 @@ Type `dibs claim src/auth/token.go --agent bob --reason "fix token bug"` Enter S
 
 Type `dibs claim src/api --agent bob --reason "new endpoints"` Enter Sleep 1.5s
 
-Type "dibs status" Enter Sleep 3s
+Type "dibs status --agent bob" Enter Sleep 3s
 
-Type `dibs note "auth API is changing — don't regenerate clients yet" --agent alice` Enter Sleep 1.5s
+Type `dibs note "auth API is changing - do not regenerate clients yet" --agent alice` Enter Sleep 1.5s
 
 Type "dibs notes --agent bob" Enter Sleep 2.5s
 

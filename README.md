@@ -23,6 +23,8 @@ embeddings. State lives inside your `.git` dir.
 [vs. alternatives](#how-dibs-compares) ·
 [FAQ](#faq)
 
+![dibs demo — two agents claim, collide politely, and coordinate](docs/demo.gif)
+
 </div>
 
 ---
