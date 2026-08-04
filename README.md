@@ -4,9 +4,10 @@
 
 **Call dibs on files. Run parallel coding agents without collisions.**
 
-The missing coordination layer for AI coding agents — file claims, presence,
-handoffs, and shared lessons. One binary. No server, no database, no
-embeddings. State lives inside your `.git` dir.
+dibs is a coordination layer for AI coding agents that share a repository:
+file claims with expiry, enforcement hooks, agent presence, handoff notes,
+and a git-native knowledge base. One static binary — no server, no
+database, no background processes.
 
 [![CI](https://github.com/polymatx/dibs/actions/workflows/ci.yml/badge.svg)](https://github.com/polymatx/dibs/actions/workflows/ci.yml)
 [![Go Report Card](https://goreportcard.com/badge/github.com/polymatx/dibs)](https://goreportcard.com/report/github.com/polymatx/dibs)
@@ -14,57 +15,42 @@ embeddings. State lives inside your `.git` dir.
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![MCP](https://img.shields.io/badge/MCP-server-6E56CF)](https://modelcontextprotocol.io)
 
-[Why](#why-dibs-exists) ·
-[60-second demo](#the-60-second-demo) ·
+[Overview](#overview) ·
+[Demo](#demo) ·
 [How it works](#how-it-works) ·
-[Quickstart](#quickstart) ·
-[Enforcement](#enforcement-claims-that-actually-block) ·
-[Lessons](#lessons-memory-that-travels-with-the-repo) ·
-[vs. alternatives](#how-dibs-compares) ·
+[Installation](#installation) ·
+[Usage](#usage) ·
+[Enforcement](#enforcement) ·
+[Lessons](#lessons) ·
+[MCP server](#mcp-server) ·
+[Comparison](#comparison) ·
 [FAQ](#faq)
 
-![dibs demo — two agents claim, collide politely, and coordinate](docs/demo.gif)
+![dibs demo](docs/demo.gif)
 
 </div>
 
----
+## Overview
 
-Running two or three Claude Code / Codex sessions in parallel is the new
-normal. So is this:
+Running several coding agents — Claude Code, Codex, Cline, Cursor — against
+one repository in parallel is now a common workflow, typically with one git
+worktree per agent. The sessions share no state: an agent cannot see what
+its peers are doing, and two agents that touch the same files produce
+silent overwrites and unmergeable diffs.
 
-> Agent A refactors `src/auth`. Agent B "fixes a quick bug" in the same
-> files. You get a merge disaster, or worse — silent overwrites.
+dibs provides the missing coordination primitives:
 
-Existing fixes want you to run an orchestration **server** with a database
-and an embedding model. dibs is the opposite bet: coordination should be
-**one tiny binary and a handful of files in your repo**.
-
-```
-you                          agent "alice"                agent "bob"
- │                            │                            │
- │                            │ dibs claim src/auth/**     │
- │                            │ ✓ granted (30m)            │
- │                            │                            │ dibs claim src/auth/token.go
- │                            │                            │ ✗ denied — alice holds it
- │                            │                            │   (refactor auth, 29m left)
- │                            │                            │ → works on src/api instead
- │        dibs status         │                            │
- │  every claim, every agent  │ dibs release               │ dibs note "api types changed"
-```
-
-## Why dibs exists
-
-| Without dibs | With dibs |
+| Problem | What dibs does |
 |---|---|
-| Two agents edit the same file; last write wins. | Claims are checked **before** editing — and can hard-block colliding edits. |
-| "What is the other session doing right now?" | `dibs status`: every agent, claim, reason, and expiry at a glance. |
-| A crashed agent holds imaginary locks forever. | Claims are **leases** — they expire on their own. No deadlocks, no daemon. |
-| Handoffs happen in your head. | `dibs note "renamed User.ID — regenerate mocks"` reaches every agent. |
-| Every session relearns the same gotchas. | Lessons live in `.dibs/lessons/*.md` — committed, searched, shared via git. |
+| Two agents edit the same file; last write wins. | Claims are checked before editing, and hooks can block colliding edits outright. |
+| No visibility into other sessions. | `dibs status` lists every agent, claim, reason, and expiry. |
+| A crashed agent leaves stale locks. | Claims are leases with a TTL. They expire on their own; there is nothing to clean up and no way to deadlock. |
+| Handoffs between agents are ad hoc. | `dibs note` broadcasts a message to every agent on the repository, with per-agent read tracking. |
+| Knowledge is lost between sessions. | Lessons are markdown files under `.dibs/lessons/`, committed with the repository and searched with BM25. |
 
-## The 60-second demo
+## Demo
 
-Real output, three agents, one repo:
+Two agents, one repository:
 
 ```console
 $ dibs claim src/auth --reason "refactor auth" --agent alice
@@ -90,9 +76,8 @@ claims
   ● src/api/**             bob (you) (new endpoints)  expires in 29m
 ```
 
-And the part that makes it *enforcement* rather than etiquette — with the
-Claude Code hook installed, an agent that ignores the protocol gets stopped
-mid-edit and told why:
+With the Claude Code hook installed, an edit that violates a claim is
+blocked before it happens, and the model is told why:
 
 ```console
 $ echo '{"tool_name":"Edit","tool_input":{"file_path":"src/auth/token.go"}}' | dibs hook claude
@@ -100,89 +85,101 @@ dibs: src/auth/token.go is claimed by alice (refactor auth) — the claim expire
 Coordinate instead of colliding: wait for the lease, message them with `dibs note`,
 or work on files outside their claim. Run `dibs status` to see all active claims.
 $ echo $?
-2   # Claude Code blocks the edit and shows the agent this message
+2
 ```
 
 ## How it works
 
-The trick is a property of git that almost nobody uses: **every worktree of
-a repository shares one `.git` common directory.**
+dibs relies on a property of git worktrees: every worktree of a repository
+shares a single common directory (`git rev-parse --git-common-dir`). State
+written there is visible to all worktrees immediately, without commits, and
+never appears in `git status`.
 
 ```
-repo/.git/dibs/          ← coordination state (leases, presence, notes, journal)
-│                          machine-local, invisible to git status,
-│                          visible to EVERY worktree instantly — no commits,
-│                          no daemon, no database
-│
-repo/.dibs/              ← knowledge (lessons/*.md)
-                           plain markdown, committed and reviewed like code,
-                           shared with your team and CI through git itself
+repo/.git/dibs/     coordination state — leases, presence, notes, journal
+                    machine-local, shared by every worktree of the repo,
+                    invisible to git
+
+repo/.dibs/         knowledge — lessons/*.md
+                    committed and reviewed like any other file, shared
+                    with the team and CI through git itself
 ```
 
-- A **claim** is a JSON file with a TTL. Conflict checking happens under an
-  advisory lockfile; expiry is evaluated lazily on read. Nothing runs in the
-  background.
-- Every agent gets a **stable identity** derived from its worktree path
-  (`brisk-otter`, `keen-wren`, …) — or set `DIBS_AGENT` / `--agent`.
-- Patterns are doublestar globs. Claiming a directory claims its subtree.
-  Glob-vs-glob conflict checking is deliberately conservative (nested static
-  prefixes collide) — predictable beats clever when the cost is a corrupted
-  refactor.
+- A **claim** is a JSON file containing an agent name, a set of patterns, a
+  reason, and an expiry. Conflict checks run under an advisory lock; expiry
+  is evaluated lazily at read time. No daemon is required.
+- **Identity** is resolved from `--agent`, then `DIBS_AGENT`, then a stable
+  name derived from the worktree path — so each worktree has a consistent
+  identity with zero configuration.
+- **Patterns** are [doublestar](https://github.com/bmatcuk/doublestar)
+  globs relative to the repository root. Claiming a directory claims its
+  subtree. Glob-to-glob conflict detection is conservative: two globs whose
+  static prefixes are nested are treated as conflicting. Precise claims
+  produce precise conflicts.
+- Every claim, denial, release, expiry, and note is appended to a JSONL
+  journal (`dibs log`).
 
-## Quickstart
+## Installation
 
 ```bash
 go install github.com/polymatx/dibs/cmd/dibs@latest
-# or grab a binary from https://github.com/polymatx/dibs/releases
 ```
+
+Prebuilt binaries for Linux, macOS, and Windows (amd64/arm64) are on the
+[releases page](https://github.com/polymatx/dibs/releases). Building from
+source requires Go 1.25+; runtime requires git.
+
+## Usage
 
 ```bash
 cd your-repo
-dibs init                     # .dibs/ + state dir, prints next steps
-dibs init --agents-md         # teach agents the protocol via AGENTS.md
-dibs hook install claude      # hard-block colliding edits in Claude Code
-dibs hook install pre-commit  # enforce at commit time for any agent
+dibs init                     # create .dibs/, print next steps
+dibs init --agents-md         # append the coordination protocol to AGENTS.md
+dibs hook install claude      # enforce claims in Claude Code
+dibs hook install pre-commit  # enforce claims at commit time (any agent)
 ```
 
-Give agents first-class tools (recommended — works with anything that
-speaks MCP):
+| Command | Description |
+|---|---|
+| `dibs claim <pattern>... [--reason ...] [--ttl 30m]` | Lease files or globs. Default TTL 30m, maximum 24h. |
+| `dibs release [pattern]... [--all]` | Release leases. Bare `dibs release` releases everything you hold. |
+| `dibs renew [--ttl 30m]` | Extend all of your leases. |
+| `dibs check <path>...` | Report whether paths are covered by another agent's lease. |
+| `dibs status [--json]` | Agents, claims, and unread note count. |
+| `dibs note <message>` | Broadcast a note to all agents on the repository. |
+| `dibs notes` | Read notes and mark them read. |
+| `dibs log [-n 20]` | Show recent journal events. |
+| `dibs lesson add\|list\|show\|search` | Manage the lessons knowledge base. |
+| `dibs mcp` | Run the MCP server on stdio. |
+| `dibs hook install\|uninstall` | Manage enforcement hooks. |
+| `dibs whoami`, `dibs version` | Identity and build information. |
 
-```bash
-claude mcp add dibs -- dibs mcp
-```
+Exit codes: `0` ok/free · `1` error · `2` denied or held by another agent.
+All state-reading commands accept `--json` for scripting.
 
-```toml
-# Codex (~/.codex/config.toml)
-[mcp_servers.dibs]
-command = "dibs"
-args = ["mcp"]
-```
+## Enforcement
 
-The MCP server exposes 8 tools — `dibs_claim`, `dibs_check`,
-`dibs_release`, `dibs_status`, `dibs_note`, `dibs_notes`,
-`dibs_lesson_add`, `dibs_lesson_search` — with descriptions that teach the
-model the protocol: *claim before editing, release when done, leave notes,
-record lessons.*
+Protocol adherence that depends on a model remembering instructions
+degrades under context pressure. dibs therefore supports enforcement at two
+levels, both opt-in:
 
-## Enforcement: claims that actually block
+- **Claude Code** — `dibs hook install claude` registers a `PreToolUse`
+  hook. When an agent attempts to edit a file covered by another agent's
+  claim, the tool call is blocked (exit code 2) and the model receives a
+  message naming the holder, their reason, and the expiry. Agents
+  consistently adjust course when given this context.
+- **Any agent** — `dibs hook install pre-commit` registers a git hook that
+  rejects commits touching files claimed by another agent.
 
-Protocols that rely on the model remembering to behave degrade under
-context pressure. dibs closes the loop:
+Hook installation is additive and idempotent: existing entries in
+`.claude/settings.json` and existing git hooks are preserved, and
+`dibs hook uninstall claude` removes exactly what was added. Both hooks
+fail open — if dibs cannot run, editing and committing proceed normally.
 
-- **Claude Code** — `dibs hook install claude` adds a `PreToolUse` hook.
-  Edits to files claimed by another agent are **blocked** (exit 2) and the
-  model is told who holds them, why, and for how long — so it adapts
-  instead of retrying blindly.
-- **Any agent** — `dibs hook install pre-commit` refuses commits that touch
-  someone else's claim.
-- Hooks **fail open**: if dibs breaks, your editor doesn't. A blocked edit
-  is a coaching moment; a bricked repo is a bug.
+## Lessons
 
-Installation is additive and idempotent — existing hooks and settings in
-`.claude/settings.json` are preserved, and `dibs hook uninstall claude`
-removes exactly what was added.
-
-## Lessons: memory that travels with the repo
+Lessons capture what an agent learned so the next session does not
+rediscover it:
 
 ```bash
 dibs lesson add "rate-limit middleware must register after auth" \
@@ -194,124 +191,125 @@ dibs lesson search "why does the rate limiter panic"
        The limiter reads ctx.User set by the auth guard. Registering it earlier panics...
 ```
 
-Lessons are markdown files with YAML frontmatter under `.dibs/lessons/`.
-That one decision buys a lot:
+Lessons are markdown files with YAML frontmatter under `.dibs/lessons/`:
 
-- **Team-shared by `git pull`** — no per-machine database to sync, no
-  server for CI agents to reach.
-- **Reviewable** — knowledge lands in PRs like code. Wrong lesson? Comment,
-  fix, or `git revert` it.
-- **Searchable without ML** — BM25 with light stemming over title/tags/body.
-  For the hundreds of lessons a real repo accumulates, lexical search built
-  in-memory per query is instant and needs zero infrastructure. If you're
-  at the scale where you need embeddings for your lessons file, you need a
-  different tool — see below.
+- **Shared through git** — the whole team and CI receive them via
+  `git pull`; there is no per-machine database to synchronize.
+- **Reviewable** — knowledge changes go through the same pull-request
+  review as code, and can be corrected or reverted like code.
+- **Searchable without infrastructure** — BM25 ranking with light stemming
+  over title, tags, and body, computed in memory per query. At the scale of
+  a repository's accumulated lessons, lexical search is instant and
+  requires no embedding model or vector store.
 
-## How dibs compares
+## MCP server
 
-Different tools do different jobs — this is the honest map:
+`dibs mcp` runs a stdio MCP server, so agents coordinate through typed
+tools rather than shell commands. The server instructions and tool
+descriptions encode the protocol (claim before editing, release when done,
+leave notes, record lessons):
 
-| | **dibs** | server-based orchestration platforms | beads | claude-squad / vibe-kanban |
-|---|---|---|---|---|
-| Job | coordination + light memory | memory + orchestration suites | issue tracking as agent memory | running/managing sessions |
-| File claims with expiry | ✅ leases | ✅ via a central server | ❌ | ❌ |
-| **Blocks colliding edits** | ✅ hooks | ❌ advisory | ❌ | ❌ (isolation via worktrees) |
-| Works across git worktrees instantly | ✅ `.git` common dir | only while the server is up | n/a | creates the worktrees |
-| Needs a running server | **no** | yes — server + web UI + database | no | no |
-| Database | **none** — JSON + markdown | SQLite / vector store | SQLite + JSONL | varies |
-| Memory search | BM25, in-repo files | vector embeddings | issue graph | ❌ |
-| Install | 1 static binary | docker compose stack | 1 binary | 1 binary / app |
-
-**Use dibs *with* [beads](https://github.com/gastownhall/beads)**: beads
-tracks *what to do*; dibs keeps agents from colliding *while doing it*.
-A natural pairing: `dibs claim src/auth --reason "bd-142: refactor auth"`.
-
-## The protocol agents follow
-
-`dibs init --agents-md` appends this to your `AGENTS.md` (also in
-[docs/protocol.md](docs/protocol.md)):
-
-1. **Claim before editing** — `dibs claim <paths> --reason "..."`. Denied?
-   Work elsewhere, wait, or coordinate. Never edit claimed files.
-2. **Release when done** — `dibs release`. Renew long work with `dibs renew`.
-3. **Start sessions with** `dibs status` and `dibs notes`.
-4. **Hand off with notes** — `dibs note "schema changed, regenerate types"`.
-5. **Record lessons** — `dibs lesson add` for gotchas future agents need;
-   `dibs lesson search` before spelunking unfamiliar code.
-
-## CLI reference
-
-| Command | What it does |
+| Tool | Purpose |
 |---|---|
-| `dibs claim <pattern>... [--reason] [--ttl 30m]` | Lease files/globs (exit 2 if denied) |
-| `dibs release [pattern]... [--all]` | Drop your leases (bare = all) |
-| `dibs renew [--ttl]` | Extend all your leases |
-| `dibs check <path>...` | Free or held? (exit 2 = held) |
-| `dibs status [--json]` | Agents, claims, unread notes |
-| `dibs note <msg>` / `dibs notes` | Broadcast / read handoffs |
-| `dibs log [-n 20]` | Coordination journal (who did what) |
-| `dibs lesson add\|list\|show\|search` | Durable knowledge in `.dibs/lessons/` |
-| `dibs mcp` | MCP server on stdio |
-| `dibs hook install claude\|pre-commit` | Turn on enforcement |
-| `dibs whoami` / `dibs version` | Identity / build info |
+| `dibs_claim` | Claim patterns with a reason and TTL; returns GRANTED or DENIED with holder details. |
+| `dibs_check` | Report whether paths are free or held. |
+| `dibs_release` | Release claims. |
+| `dibs_status` | Agents, claims, and unread notes. |
+| `dibs_note` / `dibs_notes` | Broadcast and read handoff notes. |
+| `dibs_lesson_add` / `dibs_lesson_search` | Write and search the knowledge base. |
 
-Every state-changing action is recorded in an append-only journal:
-`dibs log` answers "what have the agents been doing?".
+Client configuration:
+
+```bash
+# Claude Code
+claude mcp add dibs -- dibs mcp
+```
+
+```toml
+# Codex (~/.codex/config.toml)
+[mcp_servers.dibs]
+command = "dibs"
+args = ["mcp"]
+```
+
+Any MCP client with stdio transport is supported.
+
+## Comparison
+
+Adjacent tools solve different problems; the table shows where dibs fits.
+
+| | **dibs** | Server-based orchestration platforms | beads | claude-squad / vibe-kanban |
+|---|---|---|---|---|
+| Primary job | coordination + shared lessons | memory + orchestration suites | issue tracking as agent memory | running and managing sessions |
+| File claims with expiry | ✅ | ✅ via a central server | ❌ | ❌ |
+| Blocks colliding edits | ✅ hooks | ❌ advisory | ❌ | ❌ (isolation via worktrees) |
+| Cross-worktree visibility | ✅ instant, via `.git` common dir | while the server is running | n/a | creates the worktrees |
+| Runtime dependencies | none | server + web UI + database | none | varies |
+| Memory search | BM25 over in-repo files | vector embeddings | issue graph | ❌ |
+| Installation | single static binary | docker compose stack | single binary | binary / app |
+
+dibs composes with these tools rather than replacing them. It pairs
+naturally with [beads](https://github.com/gastownhall/beads) for task
+tracking (`dibs claim src/auth --reason "bd-142: refactor auth"`) and with
+any session manager, since coordination is independent of how sessions are
+launched.
+
+## Design principles and limitations
+
+- **No infrastructure.** No daemon, no server, no database, no telemetry.
+  All state is plain JSON and markdown on disk. If dibs is removed, a
+  repository is left exactly as it was, minus one directory.
+- **Leases, not locks.** Every claim expires. A crashed or abandoned agent
+  cannot block a repository.
+- **Fail-open enforcement.** A malfunctioning hook must never prevent
+  legitimate work; enforcement errs on the side of allowing edits.
+- **Cooperative trust model.** dibs coordinates well-behaved agents and
+  enforces claims inside Claude Code and at commit time. It is not a
+  security boundary against a process that deliberately bypasses it.
+- **Machine-local coordination.** Live claims are per machine, which
+  matches the dominant workflow of parallel agents on one workstation.
+  Lessons travel across machines through git. Cross-machine live
+  coordination is on the roadmap.
+- **Conservative conflict detection.** Overlapping glob prefixes are
+  treated as conflicts even when the globs could be disjoint. False
+  positives are cheap; silent collisions are not.
 
 ## FAQ
 
-**What if an agent never runs dibs at all?**
-Install the hooks. The Claude Code hook checks every `Edit`/`Write` no
-matter what the model forgot; the pre-commit hook catches everything else
-at commit time. Agents that *do* speak the protocol get the richer
-experience (denials with context, notes, lessons).
+**What if an agent never calls dibs at all?**
+Install the hooks. The Claude Code hook checks every file-modifying tool
+call regardless of what the model remembers; the pre-commit hook catches
+everything else at commit time.
 
-**What happens when an agent crashes holding a claim?**
-Nothing — that's the point. Claims are leases with TTLs (default 30m, max
-24h). They expire; the journal records it; life goes on.
+**What happens when an agent crashes while holding a claim?**
+The claim expires after its TTL (default 30 minutes). The expiry is
+recorded in the journal.
 
-**Is this a task tracker / orchestrator / session manager?**
-No. beads tracks tasks; claude-squad and vibe-kanban run sessions; dibs
-coordinates file access and shares knowledge between whatever you already
-run. It composes with all of them.
+**Is dibs useful with a single agent?**
+Yes, in a reduced role: lessons provide persistent knowledge across
+sessions, and the journal provides an audit trail of what was claimed and
+when.
 
-**Multiple machines?**
-Lessons already travel with git. Live coordination is per-machine today —
-by design, since parallel agents overwhelmingly share one box. A sync
-backend for distributed teams is on the roadmap.
-
-**Why not `git lfs locks` or lock files in the repo?**
-Server-bound (LFS) or commit-noise (files in the tree), and neither
-expires, path-globs, coaches the agent, or works uncommitted across
-worktrees.
-
-**Single agent — still useful?**
-Yes: lessons (persistent memory), the journal (audit trail), and notes
-(handoff to *future you* or your teammate's agent).
+**Why not `git lfs locks` or lock files committed to the repository?**
+LFS locks require a server and do not expire; committed lock files create
+commit noise and are invisible to uncommitted worktrees. Neither supports
+glob patterns or communicates context to the blocked agent.
 
 ## Roadmap
 
-- `dibs tui` — live dashboard of agents/claims (watch mode)
-- `dibs claim --wait` — block until a lease frees up
-- Cross-machine coordination backend (opt-in, still zero-config)
-- Cursor / OpenCode enforcement recipes
-- beads integration sugar (`--reason bd-142` auto-links)
+- `dibs tui` — live terminal dashboard of agents and claims
+- `dibs claim --wait` — block until a lease becomes free
+- npm wrapper package for `npx dibs` and MCP registry listing
+- Cross-machine coordination backend (opt-in)
+- Cursor and OpenCode enforcement recipes
 
 ## Contributing
 
-Small tool, small rules: `go test ./... -race` must pass, `gofmt` clean,
-no new dependencies without a very good reason. See
-[CONTRIBUTING.md](CONTRIBUTING.md).
+Contributions are welcome. The project intentionally stays small: stdlib
+plus three dependencies, no daemons, no databases. See
+[CONTRIBUTING.md](CONTRIBUTING.md) for guidelines and
+[docs/protocol.md](docs/protocol.md) for the full coordination protocol.
 
 ## License
 
-[MIT](LICENSE) — © 2026 [polymatx](https://github.com/polymatx)
-
----
-
-<div align="center">
-
-*If your agents stopped stepping on each other today, consider a ⭐ — it
-helps other multi-agent developers find dibs.*
-
-</div>
+[MIT](LICENSE) © 2026 [polymatx](https://github.com/polymatx)
