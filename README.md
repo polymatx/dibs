@@ -48,6 +48,9 @@ dibs provides the missing coordination primitives:
 | Handoffs between agents are ad hoc. | `dibs note` broadcasts a message to every agent on the repository, with per-agent read tracking. |
 | Knowledge is lost between sessions. | Lessons are markdown files under `.dibs/lessons/`, committed with the repository and searched with BM25. |
 
+The design rationale is covered in more depth in the introduction post:
+[Why Parallel Coding Agents Need a Coordination Layer](https://polymatx.dev/blog/posts/dibs-coordination-for-parallel-coding-agents/).
+
 ## Demo
 
 Two agents, one repository:
