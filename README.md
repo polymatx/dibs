@@ -134,6 +134,14 @@ Prebuilt binaries for Linux, macOS, and Windows (amd64/arm64) are on the
 [releases page](https://github.com/polymatx/dibs/releases). Building from
 source requires Go 1.25+; runtime requires git.
 
+A Dockerfile is included for containerized use — mount your repository at
+`/workspace`:
+
+```bash
+docker build -t dibs .
+docker run --rm -i -v "$PWD":/workspace dibs mcp
+```
+
 ## Usage
 
 ```bash

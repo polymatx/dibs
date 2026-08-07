@@ -1,0 +1,7 @@
+.git
+dist
+docs
+*.md
+.github
+.dibs
+.claude
