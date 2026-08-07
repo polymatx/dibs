@@ -10,8 +10,8 @@ and a git-native knowledge base. One static binary — no server, no
 database, no background processes.
 
 [![CI](https://github.com/polymatx/dibs/actions/workflows/ci.yml/badge.svg)](https://github.com/polymatx/dibs/actions/workflows/ci.yml)
-[![Go Report Card](https://goreportcard.com/badge/github.com/polymatx/dibs)](https://goreportcard.com/report/github.com/polymatx/dibs)
 [![Go Reference](https://pkg.go.dev/badge/github.com/polymatx/dibs.svg)](https://pkg.go.dev/github.com/polymatx/dibs)
+[![Glama](https://glama.ai/mcp/servers/polymatx/dibs/badges/score.svg)](https://glama.ai/mcp/servers/polymatx/dibs)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![MCP](https://img.shields.io/badge/MCP-server-6E56CF)](https://modelcontextprotocol.io)
 

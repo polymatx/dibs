@@ -1,0 +1,26 @@
+{
+  "$schema": "https://glama.ai/mcp/schemas/server.json",
+  "maintainers": ["polymatx"],
+  "name": "dibs",
+  "display_name": "dibs",
+  "description": "Coordination for parallel coding agents: TTL file claims stored in the git common dir (visible across every worktree), enforcement hooks that block colliding edits, agent presence, handoff notes, and a git-committed lessons knowledge base with BM25 search. Single static Go binary — no server, no database.",
+  "repository": "https://github.com/polymatx/dibs",
+  "license": "MIT",
+  "runtime": "go",
+  "tags": [
+    "coding-agents",
+    "multi-agent",
+    "coordination",
+    "file-locking",
+    "git-worktree",
+    "agent-memory",
+    "claude-code",
+    "developer-tools"
+  ],
+  "mcpServers": {
+    "dibs": {
+      "command": "dibs",
+      "args": ["mcp"]
+    }
+  }
+}
