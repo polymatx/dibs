@@ -2,7 +2,7 @@
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.polymatx/dibs",
   "title": "dibs",
-  "description": "Coordination for parallel coding agents: file claims with expiry, enforcement hooks that block colliding edits, and git-native lessons. One binary, no server, no database.",
+  "description": "Coordination for parallel coding agents: file claims, enforcement hooks, git-native lessons.",
   "version": "0.1.1",
   "packages": [
     {
