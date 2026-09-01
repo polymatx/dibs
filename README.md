@@ -14,6 +14,7 @@ database, no background processes.
 [![Glama](https://glama.ai/mcp/servers/polymatx/dibs/badges/score.svg)](https://glama.ai/mcp/servers/polymatx/dibs)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![MCP](https://img.shields.io/badge/MCP-server-6E56CF)](https://modelcontextprotocol.io)
+[![Mentioned in Awesome MCP Servers](https://awesome.re/mentioned-badge.svg)](https://github.com/punkpeye/awesome-mcp-servers)
 
 [Overview](#overview) ·
 [Demo](#demo) ·
@@ -134,13 +135,14 @@ Prebuilt binaries for Linux, macOS, and Windows (amd64/arm64) are on the
 [releases page](https://github.com/polymatx/dibs/releases). Building from
 source requires Go 1.25+; runtime requires git.
 
-A Dockerfile is included for containerized use — mount your repository at
-`/workspace`:
+A multi-arch container image is published to GHCR — mount your repository
+at `/workspace`:
 
 ```bash
-docker build -t dibs .
-docker run --rm -i -v "$PWD":/workspace dibs mcp
+docker run --rm -i -v "$PWD":/workspace ghcr.io/polymatx/dibs:latest mcp
 ```
+
+The same image builds locally from the included Dockerfile (`docker build -t dibs .`).
 
 ## Usage
 
