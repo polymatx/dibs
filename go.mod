@@ -1,11 +1,11 @@
 module github.com/polymatx/dibs
 
-go 1.25.0
+go 1.26.0
 
 require (
-	github.com/bmatcuk/doublestar/v4 v4.9.1
-	github.com/modelcontextprotocol/go-sdk v1.7.0
-	golang.org/x/sys v0.41.0
+	github.com/bmatcuk/doublestar/v4 v4.10.2
+	github.com/modelcontextprotocol/go-sdk v1.8.0
+	golang.org/x/sys v0.48.0
 	gopkg.in/yaml.v3 v3.0.1
 )
 
