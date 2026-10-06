@@ -1,5 +1,5 @@
 # Build
-FROM golang:1.25-alpine AS build
+FROM golang:1.27-alpine AS build
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
@@ -8,7 +8,7 @@ RUN CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o /out/dibs ./cmd/dibs
 
 # Run — git is a runtime dependency: dibs stores coordination state in the
 # repository's .git common dir.
-FROM alpine:3.22
+FROM alpine:3.24
 # MCP Registry ownership verification + OCI metadata
 LABEL io.modelcontextprotocol.server.name="io.github.polymatx/dibs" \
       org.opencontainers.image.source="https://github.com/polymatx/dibs" \
