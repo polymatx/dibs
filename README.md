@@ -133,7 +133,7 @@ go install github.com/polymatx/dibs/cmd/dibs@latest
 
 Prebuilt binaries for Linux, macOS, and Windows (amd64/arm64) are on the
 [releases page](https://github.com/polymatx/dibs/releases). Building from
-source requires Go 1.25+; runtime requires git.
+source requires Go 1.26+; runtime requires git.
 
 A multi-arch container image is published to GHCR — mount your repository
 at `/workspace`:
