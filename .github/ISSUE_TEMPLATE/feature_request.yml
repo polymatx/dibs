@@ -1,0 +1,25 @@
+name: Feature request
+description: Suggest an improvement or new capability
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        dibs deliberately stays one binary with no server, no database and no network access. Ideas that fit inside that are very welcome.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem would this solve?
+      description: Describe the coordination problem your agents run into, not just the solution.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed command, MCP tool or behavior
+      description: If you have a shape in mind, sketch it.
+      render: shell
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives you've considered

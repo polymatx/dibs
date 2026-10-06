@@ -1,0 +1,66 @@
+name: Bug report
+description: Something in dibs doesn't work as documented
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Found a way around leases or hooks, a path outside the repository, or command injection through a hook? Please don't open an issue. Report it privately as described in the [security policy](https://github.com/polymatx/dibs/security/policy).
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did you run, what did you expect, what happened instead?
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: Commands from a fresh repository are ideal, for example a `dibs claim` in one worktree and an edit in another.
+      render: shell
+    validations:
+      required: true
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Where does it happen?
+      multiple: true
+      options:
+        - CLI
+        - MCP server (dibs mcp)
+        - Claude Code hook
+        - git pre-commit hook
+        - Lessons
+    validations:
+      required: true
+  - type: input
+    id: dibs-version
+    attributes:
+      label: dibs version
+      description: Output of `dibs version`.
+      placeholder: v0.1.1
+    validations:
+      required: true
+  - type: dropdown
+    id: install
+    attributes:
+      label: How did you install it?
+      options:
+        - Release binary
+        - go install
+        - Docker (ghcr.io/polymatx/dibs)
+        - Built from source
+  - type: input
+    id: environment
+    attributes:
+      label: OS, git version and agent
+      placeholder: macOS 26 arm64, git 2.51, Claude Code
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant output
+      description: The error, `dibs status`, or the matching lines from `dibs log`.
+      render: shell

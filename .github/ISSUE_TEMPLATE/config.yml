@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Report a security vulnerability
+    url: https://github.com/polymatx/dibs/security/policy
+    about: Lease or hook bypass, path traversal, command injection. Please report privately, not as an issue.
