@@ -17,6 +17,8 @@ them — the same trust boundary as the repository itself.
 
 If you find something that breaks that model — path traversal out of the
 repo, hook-driven command injection, lease bypass that hooks should have
-caught — please email **farid.vosoughi.65@gmail.com** rather than opening a
-public issue. You'll get a response within a few days, and credit in the
-release notes if you want it.
+caught — please report it privately through
+[GitHub security advisories](https://github.com/polymatx/dibs/security/advisories/new)
+rather than opening a public issue. If you'd rather use email, write to
+**farid.vosoughi.65@gmail.com**. You'll get a response within a few days,
+and credit in the release notes if you want it.
